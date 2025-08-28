@@ -1,0 +1,112 @@
+---
+###  Base System Preparation
+
+- name: Ensure system is updated
+  ansible.builtin.apt:
+    update_cache: yes
+    upgrade: dist
+  become: true
+
+- name: Remove legacy packages
+  ansible.builtin.apt:
+    name: "{{ os_security_packages_list }}"
+    state: absent
+    purge: true
+  when: os_security_packages_clean | bool
+
+###  Automatic Security Updates
+
+- name: Install unattended-upgrades
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+    update_cache: yes
+
+- name: Enable automatic updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Configure unattended-upgrades for Security updates only
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    content: |
+      Unattended-Upgrade::Allowed-Origins {
+        "${distro_id}:${distro_codename}-security";
+      };
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "02:00";
+
+###  User Account Hardening
+
+- name: Create a new user
+  ansible.builtin.user:
+    name: "{{ new_user }}"
+    password: "{{ user_password }}"
+    group: sudo
+    shell: /bin/bash
+    state: present
+    create_home: yes
+
+- name: Harden user account with chage
+  ansible.builtin.command:
+    cmd: chage -M "{{ max_days }}" -m "{{ min_days }}" -W "{{ warn_days }}" -I "{{ inactive_days }}" -E "{{ expiring_date }}" "{{ new_user }}"
+
+###  Authentication Hardening
+
+- name: Configure pam_faillock in common-auth
+  ansible.builtin.blockinfile:
+    path: /etc/pam.d/common-auth
+    block: |
+      auth        required      pam_faillock.so preauth silent deny=3 unlock_time=600
+      auth        required      pam_faillock.so authfail deny=3 unlock_time=600
+      account     required      pam_faillock.so
+    state: present
+    insertbefore: BOF
+
+###  SSH Hardening
+
+- name: Change SSH port to 58222
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config.d/60-cloudimg-settings.conf
+    regexp: '^#?Port\s+'
+    line: "Port 58222"
+    state: present
+  notify: restart ssh
+
+###  Kernel and Network Hardening
+
+- name: Set sysctl parameters
+  ansible.builtin.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+  loop:
+    - { key: net.ipv4.tcp_syncookies, value: "1" }
+    - { key: net.ipv4.conf.all.accept_redirects, value: "0" }
+
+###  System Auditing with Lynis
+
+- name: Install Lynis
+  ansible.builtin.apt:
+    name: lynis
+    state: present
+    update_cache: yes
+
+- name: Deploy Lynis audit script
+  ansible.builtin.copy:
+    src: files/lynis_audit.sh
+    dest: /usr/local/bin/lynis_audit.sh
+    mode: "0750"
+    owner: root
+    group: root
+
+- name: Schedule daily Lynis audit
+  ansible.builtin.cron:
+    name: "Daily Lynis audit"
+    minute: "0"
+    hour: "2"
+    user: "root"
+    job: "/usr/local/bin/lynis_audit.sh"

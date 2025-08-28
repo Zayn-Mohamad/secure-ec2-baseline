@@ -1,0 +1,6 @@
+---
+# handlers file for secure-ec2-role
+- name: restart ssh
+  ansible.builtin.service:
+    name: ssh
+    state: restarted

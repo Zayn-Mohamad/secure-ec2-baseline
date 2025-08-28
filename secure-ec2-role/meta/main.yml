@@ -1,0 +1,21 @@
+galaxy_info:
+  author: Zayn-Mohamad
+  description: Secure EC2 Hardening
+  license: MIT
+  min_ansible_version: 2.1
+platforms:
+  - name: Ubuntu
+    versions:
+      - all
+
+galaxy_tags:
+  - security
+  - ec2
+  - hardening
+  - pam
+  - ssh
+  - ubuntu
+  - automation
+  - ansible
+  - cloud
+dependencies: []

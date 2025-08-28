@@ -1,0 +1,6 @@
+---
+- name: EC2 hardening
+  hosts: EC2
+  become: yes
+  roles:
+    - secure-ec2-role
